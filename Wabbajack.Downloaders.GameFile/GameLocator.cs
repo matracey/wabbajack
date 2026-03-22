@@ -66,7 +66,7 @@ public class GameLocator : IGameLocator
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "While finding games installed with Steam");
+            _logger.LogWarning("While finding games installed with Steam: {Message}", e.Message);
         }
 
         try
@@ -75,7 +75,7 @@ public class GameLocator : IGameLocator
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "While finding games installed with GOG Galaxy");
+            _logger.LogWarning("While finding games installed with GOG Galaxy: {Message}", e.Message);
         }
 
         try
@@ -84,7 +84,7 @@ public class GameLocator : IGameLocator
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "While finding games installed with the Epic Games Store");
+            _logger.LogWarning("While finding games installed with the Epic Games Store: {Message}", e.Message);
         }
 
         try
@@ -93,7 +93,7 @@ public class GameLocator : IGameLocator
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "While finding games installed with Origin");
+            _logger.LogWarning("While finding games installed with Origin: {Message}", e.Message);
         }
         try
         {
@@ -101,7 +101,7 @@ public class GameLocator : IGameLocator
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "While finding games installed with EADesktop");
+            _logger.LogWarning("While finding games installed with EA Desktop: {Message}", e.Message);
         }
     }
 
@@ -132,13 +132,13 @@ public class GameLocator : IGameLocator
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "While locating {Game}", game);
+                _logger.LogWarning("While locating {Game}: {Message}", game, e.Message);
             }
         }
 
         foreach (var error in errors)
         {
-            _logger.LogError("{Error}", error);
+            _logger.LogWarning("{Error}", error);
         }
     }
 
