@@ -1,26 +1,83 @@
-rmdir /q/s c:\tmp\publish-wj\app
-rmdir /q/s c:\tmp\publish-wj\launcher
+@echo off
+setlocal enabledelayedexpansion
 
+REM --- Configuration ---
+SET PUBLISH_BASE=%TEMP%\publish-wj
+SET CODE_SIGN_TOOL=%CODESIGNPATH%
+SET COMMON_PUBLISH_ARGS=--runtime win-x64 --configuration Release /p:IncludeNativeLibrariesForSelfExtract=true --self-contained /p:DebugType=embedded
+
+REM --- Check prerequisites ---
+WHERE dotnet >nul 2>&1 || (
+    echo .NET SDK not found. Please install the .NET SDK or add it to your PATH.
+    exit /b 1
+)
+
+WHERE python >nul 2>&1 || (
+    echo Python not found. Please install Python or add it to your PATH.
+    exit /b 1
+)
+
+WHERE 7z >nul 2>&1
+IF !ERRORLEVEL! EQU 0 (
+    SET ZIPTOOL=7z
+) ELSE IF EXIST "%ProgramFiles%\7-Zip\7z.exe" (
+    SET ZIPTOOL="%ProgramFiles%\7-Zip\7z.exe"
+) ELSE (
+    echo 7-Zip not found. Please install 7-Zip or add it to your PATH.
+    exit /b 1
+)
+
+REM --- Extract version ---
 python scripts\version_extract.py > VERSION.txt
 SET /p VERSION=<VERSION.txt
-mkdir c:\tmp\publish-wj
+echo Building version: !VERSION!
 
-dotnet clean
-dotnet publish Wabbajack.App.Wpf\Wabbajack.App.Wpf.csproj --framework "net9.0-windows" --runtime win-x64 --configuration Release -o c:\tmp\publish-wj\app /p:IncludeNativeLibrariesForSelfExtract=true --self-contained  /p:DebugType=embedded 
-dotnet publish Wabbajack.Launcher\Wabbajack.Launcher.csproj --framework "net9.0-windows" --runtime win-x64 --configuration Release -o c:\tmp\publish-wj\launcher /p:PublishSingleFile=true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true --self-contained  /p:DebugType=embedded
-dotnet publish Wabbajack.CLI\Wabbajack.CLI.csproj --framework "net9.0-windows" --runtime win-x64 --configuration Release -o c:\tmp\publish-wj\app\cli  /p:IncludeNativeLibrariesForSelfExtract=true --self-contained  /p:DebugType=embedded
+REM --- Clean previous output ---
+IF EXIST "!PUBLISH_BASE!\app" rmdir /q /s "!PUBLISH_BASE!\app"
+IF EXIST "!PUBLISH_BASE!\launcher" rmdir /q /s "!PUBLISH_BASE!\launcher"
+mkdir "!PUBLISH_BASE!"
 
-d:
-cd d:\oss\CodeSignTool\
-call CodeSignTool.bat sign -input_file_path c:\tmp\publish-wj\app\Wabbajack.exe -username=%CODE_SIGN_USER% -password=%CODE_SIGN_PASS%
-call CodeSignTool.bat sign -input_file_path c:\tmp\publish-wj\launcher\Wabbajack.exe -username=%CODE_SIGN_USER% -password=%CODE_SIGN_PASS%
-call CodeSignTool.bat sign -input_file_path c:\tmp\publish-wj\app\cli\wabbajack-cli.exe -username=%CODE_SIGN_USER% -password=%CODE_SIGN_PASS%
-d:
-cd f:\oss\Wabbajack
+REM --- Build ---
+echo Cleaning solution...
+dotnet clean || exit /b 1
 
-REM "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe" sign /fd sha256 /tr http://ts.ssl.com /td sha256 /sha1 4f60ccdc98d879537ee3cabda8da56e068f79d3b c:\tmp\publish-wj\app\Wabbajack.exe
-REM "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe" sign /fd sha256 /tr http://ts.ssl.com /td sha256 /sha1 4f60ccdc98d879537ee3cabda8da56e068f79d3b c:\tmp\publish-wj\launcher\Wabbajack.exe
-REM "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe" sign /fd sha256 /tr http://ts.ssl.com /td sha256 /sha1 4f60ccdc98d879537ee3cabda8da56e068f79d3b c:\tmp\publish-wj\app\cli\wabbajack-cli.exe
-"c:\Program Files\7-Zip\7z.exe" a c:\tmp\publish-wj\%VERSION%.zip c:\tmp\publish-wj\app\*
+echo Restoring packages...
+dotnet restore --runtime win-x64 || exit /b 1
 
-copy c:\tmp\publish-wj\launcher\Wabbajack.exe c:\tmp\publish-wj\Wabbajack.exe
+echo Publishing Wabbajack.App.Wpf...
+dotnet publish Wabbajack.App.Wpf\Wabbajack.App.Wpf.csproj --framework "net9.0-windows" -o "!PUBLISH_BASE!\app" !COMMON_PUBLISH_ARGS! || exit /b 1
+
+echo Publishing Wabbajack.Launcher...
+dotnet publish Wabbajack.Launcher\Wabbajack.Launcher.csproj --framework "net9.0-windows" -o "!PUBLISH_BASE!\launcher" /p:PublishSingleFile=true !COMMON_PUBLISH_ARGS! || exit /b 1
+
+echo Publishing Wabbajack.CLI...
+dotnet publish Wabbajack.CLI\Wabbajack.CLI.csproj --framework "net9.0-windows" -o "!PUBLISH_BASE!\app\cli" !COMMON_PUBLISH_ARGS! || exit /b 1
+
+REM --- Code signing ---
+IF NOT DEFINED CODE_SIGN_TOOL (
+    echo Code signing tool not found, skipping code signing.
+    goto Package
+)
+IF NOT DEFINED CODE_SIGN_USER (
+    echo CODE_SIGN_USER not set, skipping code signing.
+    goto Package
+)
+IF NOT DEFINED CODE_SIGN_PASS (
+    echo CODE_SIGN_PASS not set, skipping code signing.
+    goto Package
+)
+
+echo Code signing files...
+pushd "!CODE_SIGN_TOOL!"
+call CodeSignTool.bat sign -input_file_path "!PUBLISH_BASE!\app\Wabbajack.exe" -username=!CODE_SIGN_USER! -password=!CODE_SIGN_PASS!
+call CodeSignTool.bat sign -input_file_path "!PUBLISH_BASE!\launcher\Wabbajack.exe" -username=!CODE_SIGN_USER! -password=!CODE_SIGN_PASS!
+call CodeSignTool.bat sign -input_file_path "!PUBLISH_BASE!\app\cli\wabbajack-cli.exe" -username=!CODE_SIGN_USER! -password=!CODE_SIGN_PASS!
+popd
+
+REM --- Package ---
+:Package
+echo Packaging !VERSION!.zip...
+!ZIPTOOL! a "!PUBLISH_BASE!\!VERSION!.zip" "!PUBLISH_BASE!\app\*"
+copy "!PUBLISH_BASE!\launcher\Wabbajack.exe" "!PUBLISH_BASE!\Wabbajack.exe"
+
+echo Build complete: !PUBLISH_BASE!
